@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, Prize, GameEvent } from '../lib/supabase';
-import { ArrowLeft, Gift, DollarSign, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Gift, DollarSign } from 'lucide-react';
+import CongratsConfetti from './CongratsConfetti';
 
 type ShuffledCase = {
   caseNumber: number;
@@ -9,7 +10,7 @@ type ShuffledCase = {
   opened: boolean;
 };
 
-type GamePhase = 'pick-case' | 'elimination' | 'banker-offer' | 'final-swap' | 'game-over';
+type GamePhase = 'pick-case' | 'elimination' | 'final-swap' | 'game-over';
 
 type GamePlayProps = {
   event: GameEvent;
@@ -20,14 +21,23 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [cases, setCases] = useState<ShuffledCase[]>([]);
-  const [playerCase, setPlayerCase] = useState<ShuffledCase | null>(null);
+  const [playerCaseNumber, setPlayerCaseNumber] = useState<number | null>(null);
   const [phase, setPhase] = useState<GamePhase>('pick-case');
-  const [bankerOffer, setBankerOffer] = useState(0);
-  const [casesToOpen, setCasesToOpen] = useState(5);
-  const [casesOpenedThisRound, setCasesOpenedThisRound] = useState(0);
   const [revealingCase, setRevealingCase] = useState<number | null>(null);
   const [finalPrize, setFinalPrize] = useState<Prize | null>(null);
+  const [finalCaseNumber, setFinalCaseNumber] = useState<number | null>(null);
+  const [otherPrize, setOtherPrize] = useState<Prize | null>(null);
   const [message, setMessage] = useState('');
+
+  const playerCase = useMemo(() => {
+    if (playerCaseNumber === null) return null;
+    return cases.find((c) => c.caseNumber === playerCaseNumber) ?? null;
+  }, [cases, playerCaseNumber]);
+
+  const lastRemainingCase = useMemo(() => {
+    if (playerCaseNumber === null) return null;
+    return cases.find((c) => !c.opened && c.caseNumber !== playerCaseNumber) ?? null;
+  }, [cases, playerCaseNumber]);
 
   useEffect(() => {
     loadAndShufflePrizes();
@@ -59,104 +69,52 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
   };
 
   const handlePickCase = (selectedCase: ShuffledCase) => {
-    setPlayerCase(selectedCase);
+    setPlayerCaseNumber(selectedCase.caseNumber);
     setPhase('elimination');
-    setMessage(`You picked Case ${selectedCase.caseNumber}! Now open ${casesToOpen} cases.`);
+    setMessage(`You picked Case ${selectedCase.caseNumber}! Now open cases until only 2 remain.`);
   };
 
   const handleOpenCase = async (selectedCase: ShuffledCase) => {
-    if (revealingCase !== null || selectedCase.opened || selectedCase === playerCase) return;
+    if (phase !== 'elimination') return;
+    if (revealingCase !== null) return;
+    if (playerCaseNumber === null) return;
+    if (selectedCase.opened) return;
+    if (selectedCase.caseNumber === playerCaseNumber) return;
 
     setRevealingCase(selectedCase.caseNumber);
 
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    setCases(
-      cases.map((c) =>
-        c.caseNumber === selectedCase.caseNumber ? { ...c, opened: true } : c
-      )
+    const nextCases = cases.map((c) =>
+      c.caseNumber === selectedCase.caseNumber ? { ...c, opened: true } : c
     );
 
+    setCases(nextCases);
+
     setRevealingCase(null);
-    const newCount = casesOpenedThisRound + 1;
-    setCasesOpenedThisRound(newCount);
 
-    if (newCount >= casesToOpen) {
-      const unopenedCases = cases.filter((c) => !c.opened && c !== playerCase);
-      if (unopenedCases.length === 1) {
-        setPhase('final-swap');
-        setMessage('Only 2 cases left! Do you want to swap your case with the last one?');
-      } else {
-        const offer = calculateBankerOffer();
-        setBankerOffer(offer);
-        setPhase('banker-offer');
-        setMessage(`The Banker offers you $${offer.toFixed(2)}!`);
-      }
-      setCasesOpenedThisRound(0);
+    const remainingUnopened = nextCases.filter((c) => !c.opened).length;
+    if (remainingUnopened === 2) {
+      const lastCase = nextCases.find(
+        (c) => !c.opened && c.caseNumber !== playerCaseNumber
+      );
+      setPhase('final-swap');
+      setMessage(
+        lastCase
+          ? `Only 2 cases left! Keep Case ${playerCaseNumber} or switch to Case ${lastCase.caseNumber}?`
+          : 'Only 2 cases left! Make your final decision.'
+      );
+    } else {
+      setMessage(`Open a case. Remaining unopened cases: ${remainingUnopened}.`);
     }
-  };
-
-  const calculateBankerOffer = (): number => {
-    const unopenedCases = cases.filter((c) => !c.opened && c !== playerCase);
-    if (playerCase) {
-      unopenedCases.push(playerCase);
-    }
-
-    const totalValue = unopenedCases.reduce((sum, c) => sum + c.prize.value, 0);
-    const average = totalValue / unopenedCases.length;
-
-    const totalCases = cases.length;
-    const remainingCases = unopenedCases.length;
-
-    let percentage = 0.6;
-    if (remainingCases <= 2) {
-      percentage = 1.0;
-    } else if (remainingCases <= 4) {
-      percentage = 0.85;
-    } else if (remainingCases <= 7) {
-      percentage = 0.75;
-    }
-
-    return average * percentage;
-  };
-
-  const handleDeal = async () => {
-    if (!user || !profile) return;
-
-    try {
-      await supabase.from('game_history').insert({
-        event_id: event.id,
-        player_id: user.id,
-        won_prize_name: `Banker's Offer`,
-        won_prize_value: bankerOffer,
-      });
-
-      setFinalPrize({
-        id: 'banker',
-        event_id: event.id,
-        name: `Banker's Offer`,
-        value: bankerOffer,
-        is_blank: false,
-        sort_order: 0,
-      });
-      setPhase('game-over');
-      setMessage(`Deal! You won $${bankerOffer.toFixed(2)}!`);
-    } catch (error) {
-      console.error('Error saving game:', error);
-    }
-  };
-
-  const handleNoDeal = () => {
-    const newCasesToOpen = Math.max(1, Math.floor(cases.filter((c) => !c.opened && c !== playerCase).length / 3));
-    setCasesToOpen(newCasesToOpen);
-    setPhase('elimination');
-    setMessage(`No Deal! Open ${newCasesToOpen} more cases.`);
   };
 
   const handleSwap = async (swap: boolean) => {
-    if (!user || !profile || !playerCase) return;
+    if (!user || !profile) return;
+    if (playerCaseNumber === null) return;
+    if (!playerCase) return;
 
-    const lastCase = cases.find((c) => !c.opened && c !== playerCase);
+    const lastCase = cases.find((c) => !c.opened && c.caseNumber !== playerCaseNumber);
     if (!lastCase) return;
 
     const wonCase = swap ? lastCase : playerCase;
@@ -170,38 +128,14 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
       });
 
       setFinalPrize(wonCase.prize);
+      setFinalCaseNumber(wonCase.caseNumber);
+      setOtherPrize((swap ? playerCase : lastCase).prize);
       setPhase('game-over');
       setMessage(
         swap
-          ? `You swapped! You won: ${wonCase.prize.name}`
-          : `You kept your case! You won: ${wonCase.prize.name}`
+          ? `You switched to Case ${wonCase.caseNumber}!`
+          : `You kept Case ${wonCase.caseNumber}!`
       );
-
-      setCases(
-        cases.map((c) => ({
-          ...c,
-          opened: true,
-        }))
-      );
-    } catch (error) {
-      console.error('Error saving game:', error);
-    }
-  };
-
-  const handleKeepCase = async () => {
-    if (!user || !profile || !playerCase) return;
-
-    try {
-      await supabase.from('game_history').insert({
-        event_id: event.id,
-        player_id: user.id,
-        won_prize_name: playerCase.prize.name,
-        won_prize_value: playerCase.prize.value,
-      });
-
-      setFinalPrize(playerCase.prize);
-      setPhase('game-over');
-      setMessage(`You kept your case! You won: ${playerCase.prize.name}`);
 
       setCases(
         cases.map((c) => ({
@@ -246,66 +180,57 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-gray-800 mb-2">{event.event_name}</h2>
             <p className="text-lg text-gray-600">{message}</p>
-          </div>
-
-          {phase === 'banker-offer' && (
-            <div className="bg-gradient-to-r from-yellow-100 to-orange-100 border-2 border-yellow-400 rounded-xl p-6 mb-8 text-center">
-              <div className="flex items-center justify-center gap-3 mb-4">
-                <TrendingUp size={32} className="text-yellow-600" />
-                <h3 className="text-3xl font-bold text-gray-800">Banker's Offer</h3>
-              </div>
-              <p className="text-5xl font-bold text-green-600 mb-6">
-                ${bankerOffer.toFixed(2)}
+            {playerCaseNumber !== null && phase !== 'pick-case' && (
+              <p className="mt-2 text-sm text-gray-500">
+                Your chosen case: <span className="font-semibold">Case {playerCaseNumber}</span>
               </p>
-              <div className="flex gap-4 justify-center">
-                <button
-                  onClick={handleDeal}
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg transition text-xl"
-                >
-                  DEAL
-                </button>
-                <button
-                  onClick={handleNoDeal}
-                  className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-lg transition text-xl"
-                >
-                  NO DEAL
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {phase === 'final-swap' && (
             <div className="bg-gradient-to-r from-blue-100 to-indigo-100 border-2 border-blue-400 rounded-xl p-6 mb-8 text-center">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">Final Decision</h3>
               <p className="text-lg text-gray-700 mb-6">
-                Do you want to swap your case with the last remaining case?
+                Keep your chosen case, or switch to the last remaining case.
               </p>
               <div className="flex gap-4 justify-center">
                 <button
                   onClick={() => handleSwap(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg transition"
+                  disabled={!lastRemainingCase}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 px-8 rounded-lg transition"
                 >
-                  SWAP
+                  {lastRemainingCase ? `SWITCH TO CASE ${lastRemainingCase.caseNumber}` : 'SWITCH'}
                 </button>
                 <button
                   onClick={() => handleSwap(false)}
                   className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-lg transition"
                 >
-                  KEEP MY CASE
+                  {playerCaseNumber !== null ? `KEEP CASE ${playerCaseNumber}` : 'KEEP MY CASE'}
                 </button>
               </div>
             </div>
           )}
 
           {phase === 'game-over' && finalPrize && (
-            <div className="bg-gradient-to-r from-green-100 to-emerald-100 border-2 border-green-400 rounded-xl p-8 mb-8 text-center">
-              <Gift size={64} className="mx-auto mb-4 text-green-600" />
+            <div className="relative overflow-hidden bg-gradient-to-r from-green-100 to-emerald-100 border-2 border-green-400 rounded-xl p-8 mb-8 text-center">
+              <CongratsConfetti />
+              <Gift size={64} className="mx-auto mb-4 text-green-600 relative" />
               <h3 className="text-3xl font-bold text-gray-800 mb-4">Congratulations!</h3>
+              {finalCaseNumber !== null && (
+                <p className="text-xl font-semibold text-gray-700 mb-2">
+                  Final choice: <span className="font-bold">Case {finalCaseNumber}</span>
+                </p>
+              )}
               <p className="text-2xl font-semibold text-gray-700 mb-2">You won:</p>
               <p className="text-4xl font-bold text-green-600 mb-4">{finalPrize.name}</p>
               {finalPrize.value > 0 && (
                 <p className="text-3xl font-semibold text-gray-700">
                   Value: ${finalPrize.value.toFixed(2)}
+                </p>
+              )}
+              {otherPrize && (
+                <p className="mt-4 text-sm text-gray-600">
+                  The other case had: <span className="font-semibold">{otherPrize.name}</span>
                 </p>
               )}
             </div>
@@ -318,21 +243,24 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                 onClick={() => {
                   if (phase === 'pick-case') {
                     handlePickCase(caseItem);
-                  } else if (phase === 'elimination' && !caseItem.opened && caseItem !== playerCase) {
+                  } else if (
+                    phase === 'elimination' &&
+                    !caseItem.opened &&
+                    caseItem.caseNumber !== playerCaseNumber
+                  ) {
                     handleOpenCase(caseItem);
                   }
                 }}
                 disabled={
                   caseItem.opened ||
-                  phase === 'banker-offer' ||
                   phase === 'final-swap' ||
                   phase === 'game-over' ||
-                  (phase === 'elimination' && caseItem === playerCase) ||
+                  (phase === 'elimination' && caseItem.caseNumber === playerCaseNumber) ||
                   revealingCase !== null
                 }
                 className={`
                   aspect-square rounded-lg font-bold text-lg transition-all transform hover:scale-105
-                  ${caseItem === playerCase && !caseItem.opened ? 'bg-blue-500 text-white ring-4 ring-blue-300' : ''}
+                  ${caseItem.caseNumber === playerCaseNumber && !caseItem.opened ? 'bg-blue-500 text-white ring-4 ring-blue-300' : ''}
                   ${caseItem.opened ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-800'}
                   ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}
                   ${phase === 'game-over' ? 'cursor-default' : ''}

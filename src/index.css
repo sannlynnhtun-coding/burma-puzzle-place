@@ -1,3 +1,47 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  .confetti-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .confetti-piece {
+    position: absolute;
+    top: -12%;
+    width: 10px;
+    height: 16px;
+    border-radius: 2px;
+    opacity: 0.95;
+    animation-name: confetti-fall, confetti-spin;
+    animation-timing-function: linear, linear;
+    animation-iteration-count: infinite, infinite;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10%) rotate(var(--confetti-rotate, 0deg));
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(140vh) rotate(calc(var(--confetti-rotate, 0deg) + 720deg));
+    opacity: 1;
+  }
+}
+
+@keyframes confetti-spin {
+  0% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
