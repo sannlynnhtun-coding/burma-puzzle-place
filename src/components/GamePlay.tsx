@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase, Prize, GameEvent } from '../lib/supabase';
 import { ArrowLeft, Gift, DollarSign } from 'lucide-react';
 import CongratsConfetti from './CongratsConfetti';
+import { formatMMK } from '../lib/money';
 
 type ShuffledCase = {
   caseNumber: number;
@@ -148,11 +149,18 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
     }
   };
 
+  const isGoodPrize = (value: number) => value > 0;
+
   const getPrizeColor = (value: number) => {
-    if (value === 0) return 'bg-green-100 border-green-300 text-green-800';
-    if (value < 50) return 'bg-blue-100 border-blue-300 text-blue-800';
-    if (value < 500) return 'bg-yellow-100 border-yellow-300 text-yellow-800';
-    return 'bg-red-100 border-red-300 text-red-800';
+    return isGoodPrize(value)
+      ? 'bg-green-100 border-green-300 text-green-800'
+      : 'bg-red-100 border-red-300 text-red-800';
+  };
+
+  const getCaseRevealColor = (value: number) => {
+    return isGoodPrize(value)
+      ? 'bg-green-200 border-green-400 text-green-900'
+      : 'bg-red-200 border-red-400 text-red-900';
   };
 
   if (loading) {
@@ -225,7 +233,7 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
               <p className="text-4xl font-bold text-green-600 mb-4">{finalPrize.name}</p>
               {finalPrize.value > 0 && (
                 <p className="text-3xl font-semibold text-gray-700">
-                  Value: ${finalPrize.value.toFixed(2)}
+                  {formatMMK(finalPrize.value)}
                 </p>
               )}
               {otherPrize && (
@@ -261,7 +269,11 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                 className={`
                   aspect-square rounded-lg font-bold text-lg transition-all transform hover:scale-105
                   ${caseItem.caseNumber === playerCaseNumber && !caseItem.opened ? 'bg-blue-500 text-white ring-4 ring-blue-300' : ''}
-                  ${caseItem.opened ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-800'}
+                  ${
+                    caseItem.opened || revealingCase === caseItem.caseNumber
+                      ? `${getCaseRevealColor(caseItem.prize.value)} cursor-not-allowed`
+                      : 'bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-800'
+                  }
                   ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}
                   ${phase === 'game-over' ? 'cursor-default' : ''}
                   disabled:opacity-50 disabled:cursor-not-allowed
@@ -293,7 +305,7 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                   >
                     <p className="font-semibold truncate">{c.prize.name}</p>
                     <p className="text-sm">
-                      {c.prize.value > 0 ? `$${c.prize.value.toFixed(2)}` : 'Joke/Blank'}
+                      {c.prize.value > 0 ? formatMMK(c.prize.value) : 'Joke/Blank'}
                     </p>
                   </div>
                 ))}
