@@ -157,7 +157,8 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
       : 'bg-red-100 border-red-300 text-red-800';
   };
 
-  const getCaseRevealColor = (value: number) => {
+  const getCaseRevealColor = (value: number, isFinalChosen: boolean) => {
+    if (isFinalChosen) return 'bg-blue-200 border-blue-400 text-blue-900';
     return isGoodPrize(value)
       ? 'bg-green-200 border-green-400 text-green-900'
       : 'bg-red-200 border-red-400 text-red-900';
@@ -268,10 +269,14 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                 }
                 className={`
                   aspect-square rounded-lg font-bold text-lg transition-all transform hover:scale-105
-                  ${caseItem.caseNumber === playerCaseNumber && !caseItem.opened ? 'bg-blue-500 text-white ring-4 ring-blue-300' : ''}
+                  ${
+                    caseItem.caseNumber === playerCaseNumber && !caseItem.opened
+                      ? 'bg-blue-500 text-white ring-4 ring-blue-300'
+                      : ''
+                  }
                   ${
                     caseItem.opened || revealingCase === caseItem.caseNumber
-                      ? `${getCaseRevealColor(caseItem.prize.value)} cursor-not-allowed`
+                      ? `${getCaseRevealColor(caseItem.prize.value, phase === 'game-over' && finalCaseNumber === caseItem.caseNumber)} cursor-not-allowed`
                       : 'bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-800'
                   }
                   ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}
@@ -293,22 +298,34 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
           <div className="border-t pt-6">
             <h4 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <DollarSign size={24} />
-              Remaining Prizes
+              {phase === 'game-over' ? 'All Prizes' : 'Remaining Prizes'}
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {cases
-                .filter((c) => !c.opened)
-                .map((c) => (
-                  <div
-                    key={c.caseNumber}
-                    className={`p-3 rounded-lg border-2 ${getPrizeColor(c.prize.value)}`}
-                  >
-                    <p className="font-semibold truncate">{c.prize.name}</p>
-                    <p className="text-sm">
-                      {c.prize.value > 0 ? formatMMK(c.prize.value) : 'Joke/Blank'}
-                    </p>
-                  </div>
-                ))}
+                .filter((c) => (phase === 'game-over' ? true : !c.opened))
+                .slice()
+                .sort((a, b) => a.caseNumber - b.caseNumber)
+                .map((c) => {
+                  const isFinalPrize = phase === 'game-over' && finalCaseNumber === c.caseNumber;
+                  return (
+                    <div
+                      key={c.caseNumber}
+                      className={`p-3 rounded-lg border-2 ${
+                        isFinalPrize
+                          ? 'bg-blue-100 border-blue-400 text-blue-900'
+                          : getPrizeColor(c.prize.value)
+                      }`}
+                    >
+                      <p className="font-semibold truncate">
+                        {phase === 'game-over' ? `Case ${c.caseNumber}: ` : ''}
+                        {c.prize.name}
+                      </p>
+                      <p className="text-sm">
+                        {c.prize.value > 0 ? formatMMK(c.prize.value) : 'Joke/Blank'}
+                      </p>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </div>
