@@ -13,10 +13,44 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
   const { profile, signOut } = useAuth();
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [playedPlayerCounts, setPlayedPlayerCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadEvents();
   }, []);
+
+  const loadPlayedPlayerCounts = async (eventIds: string[]) => {
+    if (eventIds.length === 0) {
+      setPlayedPlayerCounts({});
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('game_history')
+        .select('event_id, player_id')
+        .in('event_id', eventIds);
+
+      if (error) throw error;
+
+      const perEventPlayers = new Map<string, Set<string>>();
+      for (const row of data ?? []) {
+        const eventId = row.event_id as string | undefined;
+        const playerId = row.player_id as string | undefined;
+        if (!eventId || !playerId) continue;
+
+        const set = perEventPlayers.get(eventId) ?? new Set<string>();
+        set.add(playerId);
+        perEventPlayers.set(eventId, set);
+      }
+
+      const counts: Record<string, number> = {};
+      for (const id of eventIds) counts[id] = perEventPlayers.get(id)?.size ?? 0;
+      setPlayedPlayerCounts(counts);
+    } catch (error) {
+      console.error('Error loading played player counts:', error);
+    }
+  };
 
   const loadEvents = async () => {
     try {
@@ -26,7 +60,9 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setEvents(data || []);
+      const loadedEvents = data || [];
+      setEvents(loadedEvents);
+      await loadPlayedPlayerCounts(loadedEvents.map((e) => e.id));
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {
@@ -89,6 +125,13 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
                   </p>
                   <div className="text-sm text-gray-500 mb-4">
                     Created: {new Date(event.created_at).toLocaleDateString()}
+                    <div>
+                      Played by:{' '}
+                      <span className="font-semibold text-gray-700">
+                        {playedPlayerCounts[event.id] ?? 0}
+                      </span>{' '}
+                      players
+                    </div>
                   </div>
                   <button
                     onClick={() => onPlayGame(event)}

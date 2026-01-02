@@ -83,7 +83,7 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
 
     setRevealingCase(selectedCase.caseNumber);
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     const nextCases = cases.map((c) =>
       c.caseNumber === selectedCase.caseNumber ? { ...c, opened: true } : c

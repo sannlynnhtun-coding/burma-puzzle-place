@@ -1,51 +1,55 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Trophy, Medal, Award } from 'lucide-react';
+import { Trophy } from 'lucide-react';
 
 type LeaderboardEntry = {
   id: string;
   player_username: string;
   event_name: string;
   won_prize_name: string;
-  won_prize_value: number;
   played_at: string;
 };
 
 export default function Leaderboard() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
-  useEffect(() => {
-    loadLeaderboard();
-  }, []);
+  const pageSize = 15;
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / pageSize)), [totalCount]);
 
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = useCallback(async (pageNumber: number) => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
+      const from = (pageNumber - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      const { data, error, count } = await supabase
         .from('game_history')
         .select(
           `
           id,
           won_prize_name,
-          won_prize_value,
           played_at,
-          player_id,
           profiles!game_history_player_id_fkey (username),
           game_events!game_history_event_id_fkey (event_name)
-        `
+        `,
+          { count: 'exact' }
         )
-        .gt('won_prize_value', 0)
-        .order('won_prize_value', { ascending: false })
-        .limit(1000);
+        // .gt('won_prize_value', 0)
+        .order('played_at', { ascending: false })
+        .range(from, to);
 
       if (error) throw error;
+
+      setTotalCount(count ?? 0);
 
       const formattedData: LeaderboardEntry[] = data.map((entry: any) => ({
         id: entry.id,
         player_username: entry.profiles?.username || 'Unknown',
         event_name: entry.game_events?.event_name || 'Unknown Event',
         won_prize_name: entry.won_prize_name,
-        won_prize_value: entry.won_prize_value,
         played_at: entry.played_at,
       }));
 
@@ -55,20 +59,16 @@ export default function Leaderboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pageSize]);
 
-  const getRankIcon = (rank: number) => {
-    if (rank === 1) return <Trophy className="text-yellow-500" size={24} />;
-    if (rank === 2) return <Medal className="text-gray-400" size={24} />;
-    if (rank === 3) return <Award className="text-orange-600" size={24} />;
-    return null;
-  };
+  useEffect(() => {
+    loadLeaderboard(page);
+  }, [page, loadLeaderboard]);
 
-  const getRankClass = (rank: number) => {
-    if (rank === 1) return 'bg-gradient-to-r from-yellow-50 to-yellow-100 border-yellow-300';
-    if (rank === 2) return 'bg-gradient-to-r from-gray-50 to-gray-100 border-gray-300';
-    if (rank === 3) return 'bg-gradient-to-r from-orange-50 to-orange-100 border-orange-300';
-    return 'bg-white border-gray-200';
+  const formatPlayedAt = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString();
   };
 
   if (loading) {
@@ -93,16 +93,14 @@ export default function Leaderboard() {
       ) : (
         <div className="space-y-3">
           {leaderboard.map((entry, index) => {
-            const rank = index + 1;
+            const rank = (page - 1) * pageSize + index + 1;
             return (
               <div
                 key={entry.id}
-                className={`flex items-center gap-4 p-4 rounded-lg border-2 transition-all hover:shadow-md ${getRankClass(
-                  rank
-                )}`}
+                className="flex items-center gap-4 p-4 rounded-lg border-2 border-gray-200 bg-white transition-all hover:shadow-md"
               >
                 <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 font-bold text-gray-700">
-                  {getRankIcon(rank) || `#${rank}`}
+                  #{rank}
                 </div>
 
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-4 gap-2 md:gap-4">
@@ -118,11 +116,9 @@ export default function Leaderboard() {
                     <p className="text-xs text-gray-500 uppercase">Prize</p>
                     <p className="font-medium text-gray-700 truncate">{entry.won_prize_name}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500 uppercase">Value</p>
-                    <p className="font-bold text-green-600 text-lg">
-                      ${entry.won_prize_value.toFixed(2)}
-                    </p>
+                  <div className="md:text-right">
+                    <p className="text-xs text-gray-500 uppercase">Played at</p>
+                    <p className="font-medium text-gray-700">{formatPlayedAt(entry.played_at)}</p>
                   </div>
                 </div>
               </div>
@@ -130,6 +126,38 @@ export default function Leaderboard() {
           })}
         </div>
       )}
+
+      <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="text-sm text-gray-600">
+          Page <span className="font-semibold">{page}</span> of{' '}
+          <span className="font-semibold">{totalPages}</span>
+          {totalCount > 0 ? (
+            <>
+              {' '}
+              • <span className="font-semibold">{totalCount}</span> total wins
+            </>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={loading || page <= 1}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Prev
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={loading || page >= totalPages}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
