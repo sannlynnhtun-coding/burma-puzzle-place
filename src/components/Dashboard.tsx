@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, GameEvent } from '../lib/supabase';
-import { Plus, Play, LogOut, Sparkles, Trophy, LayoutGrid } from 'lucide-react';
+import { Plus, Play, LogOut, Trophy, LayoutGrid } from 'lucide-react';
 import Leaderboard from './Leaderboard';
 
 type DashboardProps = {
@@ -29,24 +29,18 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
     try {
       const { data, error } = await supabase
         .from('game_history')
-        .select('event_id, player_id')
+        .select('event_id')
         .in('event_id', eventIds);
 
       if (error) throw error;
 
-      const perEventPlayers = new Map<string, Set<string>>();
+      const counts: Record<string, number> = {};
+      for (const id of eventIds) counts[id] = 0;
       for (const row of data ?? []) {
         const eventId = row.event_id as string | undefined;
-        const playerId = row.player_id as string | undefined;
-        if (!eventId || !playerId) continue;
-
-        const set = perEventPlayers.get(eventId) ?? new Set<string>();
-        set.add(playerId);
-        perEventPlayers.set(eventId, set);
+        if (!eventId) continue;
+        counts[eventId] = (counts[eventId] ?? 0) + 1;
       }
-
-      const counts: Record<string, number> = {};
-      for (const id of eventIds) counts[id] = perEventPlayers.get(id)?.size ?? 0;
       setPlayedPlayerCounts(counts);
     } catch (error) {
       console.error('Error loading played player counts:', error);
@@ -72,11 +66,11 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2]">
       <nav className="bg-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Sparkles className="text-blue-600" size={32} />
+            <img src="/logo.png" alt="Puzzle Place" className="w-10 h-10 object-contain" />
             <h1 className="text-2xl font-bold text-gray-800">Puzzle Place</h1>
           </div>
 
@@ -86,7 +80,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
               onClick={() => setActivePage('games')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition border ${
                 activePage === 'games'
-                  ? 'bg-blue-600 text-white border-blue-600'
+                  ? 'bg-[#E56353] text-white border-[#E56353]'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -98,7 +92,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
               onClick={() => setActivePage('leaderboard')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition border ${
                 activePage === 'leaderboard'
-                  ? 'bg-blue-600 text-white border-blue-600'
+                  ? 'bg-[#E56353] text-white border-[#E56353]'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
               }`}
             >
@@ -127,7 +121,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
             type="button"
             onClick={() => setActivePage('games')}
             className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-medium transition ${
-              activePage === 'games' ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-700'
+              activePage === 'games' ? 'bg-[#E56353] text-white' : 'bg-gray-50 text-gray-700'
             }`}
           >
             <LayoutGrid size={18} />
@@ -138,7 +132,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
             onClick={() => setActivePage('leaderboard')}
             className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-medium transition ${
               activePage === 'leaderboard'
-                ? 'bg-blue-600 text-white'
+                ? 'bg-[#E56353] text-white'
                 : 'bg-gray-50 text-gray-700'
             }`}
           >
@@ -155,7 +149,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
               <h2 className="text-3xl font-bold text-gray-800">Available Games</h2>
               <button
                 onClick={onCreateEvent}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition"
+                className="flex items-center gap-2 bg-[#E56353] hover:bg-[#D55445] text-white font-semibold py-3 px-6 rounded-lg transition"
               >
                 <Plus size={20} />
                 Create Event
@@ -182,16 +176,16 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
                     <div className="text-sm text-gray-500 mb-4">
                       Created: {new Date(event.created_at).toLocaleDateString()}
                       <div>
-                        Played by:{' '}
+                        Plays:{' '}
                         <span className="font-semibold text-gray-700">
                           {playedPlayerCounts[event.id] ?? 0}
                         </span>{' '}
-                        players
+                        times
                       </div>
                     </div>
                     <button
                       onClick={() => onPlayGame(event)}
-                      className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition"
+                      className="w-full flex items-center justify-center gap-2 bg-[#E56353] hover:bg-[#D55445] text-white font-semibold py-3 px-6 rounded-lg transition"
                     >
                       <Play size={20} />
                       Play Game

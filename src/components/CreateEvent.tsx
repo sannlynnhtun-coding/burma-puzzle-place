@@ -110,7 +110,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2] p-4 py-8">
       <div className="max-w-4xl mx-auto">
         <button
           onClick={onBack}
@@ -133,7 +133,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                 type="text"
                 value={eventName}
                 onChange={(e) => setEventName(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#E56353] focus:border-transparent outline-none transition"
                 required
               />
             </div>
@@ -147,7 +147,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#E56353] focus:border-transparent outline-none transition resize-none"
               />
             </div>
 
@@ -159,7 +159,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                 <button
                   type="button"
                   onClick={addPrize}
-                  className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium transition"
+                  className="flex items-center gap-2 text-[#E56353] hover:text-[#D55445] font-medium transition"
                 >
                   <Plus size={20} />
                   Add Prize
@@ -178,7 +178,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                         placeholder="Prize name"
                         value={prize.name}
                         onChange={(e) => updatePrize(index, 'name', e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#E56353] focus:border-transparent outline-none"
                         required
                       />
                       <input
@@ -186,7 +186,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                         placeholder="Value"
                         value={prize.value}
                         onChange={(e) => updatePrize(index, 'value', parseFloat(e.target.value) || 0)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#E56353] focus:border-transparent outline-none"
                         disabled={prize.isBlank}
                         required
                       />
@@ -200,7 +200,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
                               updatePrize(index, 'value', 0);
                             }
                           }}
-                          className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                          className="w-4 h-4 text-[#E56353] rounded focus:ring-2 focus:ring-[#E56353]"
                         />
                         <span className="text-sm text-gray-700">Joke/Blank</span>
                       </label>
@@ -232,7 +232,7 @@ export default function CreateEvent({ onBack, onSuccess }: CreateEventProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[#E56353] hover:bg-[#D55445] text-white font-semibold py-3 px-6 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating Event...' : 'Create Event'}
             </button>

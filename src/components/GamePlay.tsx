@@ -166,14 +166,14 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2] flex items-center justify-center">
         <div className="text-2xl font-semibold text-gray-700">Loading game...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2] p-4 py-8">
       <div className="max-w-7xl mx-auto">
         {phase === 'game-over' ? (
           <button
@@ -197,7 +197,7 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
           </div>
 
           {phase === 'final-swap' && (
-            <div className="bg-gradient-to-r from-blue-100 to-indigo-100 border-2 border-blue-400 rounded-xl p-6 mb-8 text-center">
+            <div className="bg-gradient-to-r from-[#FCE8E5] to-[#F7D6D2] border-2 border-[#E56353] rounded-xl p-6 mb-8 text-center">
               <h3 className="text-2xl font-bold text-gray-800 mb-4">Final Decision</h3>
               <p className="text-lg text-gray-700 mb-6">
                 Keep your chosen case, or switch to the last remaining case.
@@ -206,7 +206,7 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                 <button
                   onClick={() => handleSwap(true)}
                   disabled={!lastRemainingCase}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 px-8 rounded-lg transition"
+                  className="bg-[#E56353] hover:bg-[#D55445] disabled:bg-[#E9A39A] text-white font-bold py-3 px-8 rounded-lg transition"
                 >
                   {lastRemainingCase ? `SWITCH TO CASE ${lastRemainingCase.caseNumber}` : 'SWITCH'}
                 </button>
@@ -271,13 +271,13 @@ export default function GamePlay({ event, onBack }: GamePlayProps) {
                   aspect-square rounded-lg font-bold text-lg transition-all transform hover:scale-105
                   ${
                     caseItem.caseNumber === playerCaseNumber && !caseItem.opened
-                      ? 'bg-blue-500 text-white ring-4 ring-blue-300'
+                      ? 'bg-[#E56353] text-white ring-4 ring-[#F2B7B0]'
                       : ''
                   }
                   ${
                     caseItem.opened || revealingCase === caseItem.caseNumber
                       ? `${getCaseRevealColor(caseItem.prize.value, phase === 'game-over' && finalCaseNumber === caseItem.caseNumber)} cursor-not-allowed`
-                      : 'bg-white border-2 border-gray-300 hover:border-blue-400 text-gray-800'
+                      : 'bg-white border-2 border-gray-300 hover:border-[#E56353] text-gray-800'
                   }
                   ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}
                   ${phase === 'game-over' ? 'cursor-default' : ''}
