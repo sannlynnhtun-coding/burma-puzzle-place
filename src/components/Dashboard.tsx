@@ -97,7 +97,7 @@ export default function Dashboard({ onCreateEvent, onPlayGame }: DashboardProps)
               }`}
             >
               <Trophy size={18} />
-              Global Leaderboard
+              Latest Played Users
             </button>
           </div>
 
