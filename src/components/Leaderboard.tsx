@@ -83,12 +83,12 @@ export default function Leaderboard() {
     <div className="bg-white rounded-xl shadow-lg p-8">
       <div className="flex items-center gap-3 mb-6">
         <Trophy className="text-yellow-500" size={32} />
-        <h2 className="text-3xl font-bold text-gray-800">Global Leaderboard</h2>
+        <h2 className="text-3xl font-bold text-gray-800">Latest Played Users</h2>
       </div>
 
       {leaderboard.length === 0 ? (
         <div className="text-center text-gray-600 py-8">
-          No winners yet. Be the first to play and win!
+          No recent plays yet. Be the first to play!
         </div>
       ) : (
         <div className="space-y-3">
@@ -134,7 +134,7 @@ export default function Leaderboard() {
           {totalCount > 0 ? (
             <>
               {' '}
-              • <span className="font-semibold">{totalCount}</span> total wins
+              • <span className="font-semibold">{totalCount}</span> total plays
             </>
           ) : null}
         </div>
