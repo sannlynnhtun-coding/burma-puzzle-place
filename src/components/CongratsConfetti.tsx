@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 
 type ConfettiPiece = {
   left: string;
@@ -35,19 +35,15 @@ export default function CongratsConfetti({ pieces = 28 }: { pieces?: number }) {
     <div className="confetti-container" aria-hidden="true">
       {confetti.map((p, idx) => (
         <span
-          // eslint-disable-next-line react/no-array-index-key
           key={idx}
           className="confetti-piece"
           style={{
             left: p.left,
             animationDelay: p.delay,
             animationDuration: p.duration,
-            // Used by CSS keyframes to vary each piece's rotation.
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-expect-error CSS custom property
             ['--confetti-rotate']: p.rotate,
             backgroundColor: p.color,
-          }}
+          } as CSSProperties}
         />
       ))}
     </div>

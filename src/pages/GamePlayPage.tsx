@@ -1,371 +1,321 @@
-import { useMemo, useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { supabase, Prize, GameEvent } from '../lib/supabase';
-import { ArrowLeft, Gift, DollarSign } from 'lucide-react';
-import CongratsConfetti from '../components/CongratsConfetti';
-import { formatMMK } from '../lib/money';
+import { useCallback, useMemo, useState } from 'react';
+import { ArrowLeft, Sparkles, WalletCards } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import ChosenCaseCard from '../components/ChosenCaseCard';
+import PrizeCard, { PrizeIcon } from '../components/PrizeCard';
+import WinnerScreen from '../components/WinnerScreen';
+import { useGuestSession } from '../contexts/GuestSessionContext';
+import { getGameCatalog, getGameOptions, type CatalogPrize } from '../lib/catalog';
+import { getGameTheme } from '../lib/gameThemes';
+import { getPrizeVisual, type PrizePattern } from '../lib/prizeThemes';
+import { shuffle } from '../lib/shuffle';
 
 type ShuffledCase = {
   caseNumber: number;
-  prize: Prize;
+  prize: CatalogPrize;
   opened: boolean;
 };
 
 type GamePhase = 'pick-case' | 'elimination' | 'final-swap' | 'game-over';
 
+const CASE_COLORS = ['#8B3FF5', '#FF8A1F', '#54C93F', '#2474E8', '#F53C78', '#18BBB7', '#FFBD1C'];
+const CASE_PATTERNS: readonly PrizePattern[] = ['checker', 'dots', 'stripes', 'rings', 'burst'];
+
+function buildCases(prizes: readonly CatalogPrize[]): ShuffledCase[] {
+  return shuffle(prizes).map((prize, index) => ({
+    caseNumber: index + 1,
+    prize,
+    opened: false,
+  }));
+}
+
+function PrizeDeck({
+  cases,
+  showAll = false,
+  title,
+  subtitle,
+}: {
+  cases: ShuffledCase[];
+  showAll?: boolean;
+  title: string;
+  subtitle: string;
+}) {
+  const visibleCases = [...cases]
+    .sort((left, right) => left.prize.sortOrder - right.prize.sortOrder);
+  const availableCount = cases.filter((item) => !item.opened).length;
+
+  return (
+    <section className="prize-deck-section">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[#48EDA0]">
+            <WalletCards size={24} />
+            <h2 className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">{title}</h2>
+          </div>
+          <p className="mt-1 text-sm font-medium text-[#9DA5CB]">{subtitle}</p>
+        </div>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#D9FF43]">
+          {showAll ? `${visibleCases.length} cards` : `${availableCount} still in play`}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
+        {visibleCases.map((item) => (
+          <PrizeCard
+            key={item.prize.id}
+            prize={item.prize}
+            number={item.prize.sortOrder}
+            state={!showAll && item.opened ? 'gone' : 'default'}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function GamePlayPage() {
-  const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
-  const [event, setEvent] = useState<GameEvent | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [cases, setCases] = useState<ShuffledCase[]>([]);
+  const { displayName, selectedEventId } = useGuestSession();
+  const catalog = useMemo(() => {
+    const selectedCatalog = getGameCatalog(selectedEventId ?? '');
+    if (!selectedCatalog) throw new Error('Selected static game is unavailable');
+    return selectedCatalog;
+  }, [selectedEventId]);
+  const game = catalog.game;
+  const gameIndex = getGameOptions().findIndex((option) => option.id === game.id);
+  const theme = getGameTheme(gameIndex);
+  const [cases, setCases] = useState<ShuffledCase[]>(() => buildCases(catalog.prizes));
   const [playerCaseNumber, setPlayerCaseNumber] = useState<number | null>(null);
   const [phase, setPhase] = useState<GamePhase>('pick-case');
   const [revealingCase, setRevealingCase] = useState<number | null>(null);
-  const [finalPrize, setFinalPrize] = useState<Prize | null>(null);
+  const [lastOpenedCaseNumber, setLastOpenedCaseNumber] = useState<number | null>(null);
+  const [finalPrize, setFinalPrize] = useState<CatalogPrize | null>(null);
   const [finalCaseNumber, setFinalCaseNumber] = useState<number | null>(null);
-  const [otherPrize, setOtherPrize] = useState<Prize | null>(null);
-  const [message, setMessage] = useState('');
+  const [otherPrize, setOtherPrize] = useState<CatalogPrize | null>(null);
+  const [finalDecision, setFinalDecision] = useState<'kept' | 'switched' | null>(null);
+  const [message, setMessage] = useState('Pick one case to keep.');
 
   const playerCase = useMemo(() => {
     if (playerCaseNumber === null) return null;
-    return cases.find((c) => c.caseNumber === playerCaseNumber) ?? null;
+    return cases.find((item) => item.caseNumber === playerCaseNumber) ?? null;
   }, [cases, playerCaseNumber]);
 
   const lastRemainingCase = useMemo(() => {
     if (playerCaseNumber === null) return null;
-    return cases.find((c) => !c.opened && c.caseNumber !== playerCaseNumber) ?? null;
+    return cases.find((item) => !item.opened && item.caseNumber !== playerCaseNumber) ?? null;
   }, [cases, playerCaseNumber]);
 
-  useEffect(() => {
-    loadEventAndPrizes();
-  }, [eventId]);
+  const lastOpenedCase = useMemo(() => {
+    if (lastOpenedCaseNumber === null) return null;
+    return cases.find((item) => item.caseNumber === lastOpenedCaseNumber) ?? null;
+  }, [cases, lastOpenedCaseNumber]);
 
-  const loadEventAndPrizes = async () => {
-    if (!eventId) {
-      navigate('/dashboard');
-      return;
-    }
-
-    try {
-      // Load event details
-      const { data: eventData, error: eventError } = await supabase
-        .from('game_events')
-        .select('*')
-        .eq('id', eventId)
-        .single();
-
-      if (eventError) throw eventError;
-      if (!eventData) {
-        navigate('/dashboard');
-        return;
-      }
-
-      setEvent(eventData);
-
-      // Load prizes
-      const { data: prizesData, error: prizesError } = await supabase
-        .from('prize_pool')
-        .select('*')
-        .eq('event_id', eventId)
-        .order('sort_order');
-
-      if (prizesError) throw prizesError;
-
-      const shuffled = [...prizesData].sort(() => Math.random() - 0.5);
-      const casesWithNumbers: ShuffledCase[] = shuffled.map((prize, index) => ({
-        caseNumber: index + 1,
-        prize,
-        opened: false,
-      }));
-
-      setCases(casesWithNumbers);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading event and prizes:', error);
-      navigate('/dashboard');
-    }
-  };
+  const startRound = useCallback(() => {
+    setCases(buildCases(catalog.prizes));
+    setPlayerCaseNumber(null);
+    setPhase('pick-case');
+    setRevealingCase(null);
+    setLastOpenedCaseNumber(null);
+    setFinalPrize(null);
+    setFinalCaseNumber(null);
+    setOtherPrize(null);
+    setFinalDecision(null);
+    setMessage('Pick one case to keep.');
+  }, [catalog.prizes]);
 
   const handlePickCase = (selectedCase: ShuffledCase) => {
     setPlayerCaseNumber(selectedCase.caseNumber);
     setPhase('elimination');
-    setMessage(`You picked Case ${selectedCase.caseNumber}! Now open cases until only 2 remain.`);
+    setMessage(`Case ${selectedCase.caseNumber} is yours. Open cases until only two remain.`);
   };
 
   const handleOpenCase = async (selectedCase: ShuffledCase) => {
-    if (phase !== 'elimination') return;
-    if (revealingCase !== null) return;
-    if (playerCaseNumber === null) return;
-    if (selectedCase.opened) return;
-    if (selectedCase.caseNumber === playerCaseNumber) return;
+    if (
+      phase !== 'elimination' ||
+      revealingCase !== null ||
+      playerCaseNumber === null ||
+      selectedCase.opened ||
+      selectedCase.caseNumber === playerCaseNumber
+    ) return;
 
     setRevealingCase(selectedCase.caseNumber);
+    await new Promise((resolve) => window.setTimeout(resolve, 450));
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const nextCases = cases.map((c) =>
-      c.caseNumber === selectedCase.caseNumber ? { ...c, opened: true } : c
-    );
-
+    const nextCases = cases.map((item) => (
+      item.caseNumber === selectedCase.caseNumber ? { ...item, opened: true } : item
+    ));
     setCases(nextCases);
-
     setRevealingCase(null);
+    setLastOpenedCaseNumber(selectedCase.caseNumber);
 
-    const remainingUnopened = nextCases.filter((c) => !c.opened).length;
-    if (remainingUnopened === 2) {
-      const lastCase = nextCases.find(
-        (c) => !c.opened && c.caseNumber !== playerCaseNumber
-      );
+    const remaining = nextCases.filter((item) => !item.opened);
+    if (remaining.length === 2) {
+      const lastCase = remaining.find((item) => item.caseNumber !== playerCaseNumber);
       setPhase('final-swap');
-      setMessage(
-        lastCase
-          ? `Only 2 cases left! Keep Case ${playerCaseNumber} or switch to Case ${lastCase.caseNumber}?`
-          : 'Only 2 cases left! Make your final decision.'
-      );
+      setMessage(lastCase
+        ? `Final choice: keep Case ${playerCaseNumber}, or switch to Case ${lastCase.caseNumber}?`
+        : 'Only two cases remain. Make your final choice.');
     } else {
-      setMessage(`Open a case. Remaining unopened cases: ${remainingUnopened}.`);
+      setMessage(`${remaining.length} unopened cases remain.`);
     }
   };
 
-  const handleSwap = async (swap: boolean) => {
-    if (!user || !profile || !event) return;
-    if (playerCaseNumber === null) return;
-    if (!playerCase) return;
+  const handleFinalChoice = (swap: boolean) => {
+    if (playerCaseNumber === null || !playerCase || !lastRemainingCase) return;
 
-    const lastCase = cases.find((c) => !c.opened && c.caseNumber !== playerCaseNumber);
-    if (!lastCase) return;
+    const wonCase = swap ? lastRemainingCase : playerCase;
+    const unchosenCase = swap ? playerCase : lastRemainingCase;
 
-    const wonCase = swap ? lastCase : playerCase;
-
-    try {
-      await supabase.from('game_history').insert({
-        event_id: event.id,
-        player_id: user.id,
-        won_prize_name: wonCase.prize.name,
-        won_prize_value: wonCase.prize.value,
-      });
-
-      setFinalPrize(wonCase.prize);
-      setFinalCaseNumber(wonCase.caseNumber);
-      setOtherPrize((swap ? playerCase : lastCase).prize);
-      setPhase('game-over');
-      setMessage(
-        swap
-          ? `You switched to Case ${wonCase.caseNumber}!`
-          : `You kept Case ${wonCase.caseNumber}!`
-      );
-
-      setCases(
-        cases.map((c) => ({
-          ...c,
-          opened: true,
-        }))
-      );
-    } catch (error) {
-      console.error('Error saving game:', error);
-    }
+    setFinalPrize(wonCase.prize);
+    setFinalCaseNumber(wonCase.caseNumber);
+    setOtherPrize(unchosenCase.prize);
+    setFinalDecision(swap ? 'switched' : 'kept');
+    setPhase('game-over');
+    setMessage(swap
+      ? `${displayName} switched to Case ${wonCase.caseNumber}.`
+      : `${displayName} kept Case ${wonCase.caseNumber}.`);
+    setCases((current) => current.map((item) => ({ ...item, opened: true })));
   };
 
-  const isGoodPrize = (value: number) => value > 0;
-
-  const getPrizeColor = (value: number) => {
-    return isGoodPrize(value)
-      ? 'bg-green-100 border-green-300 text-green-800'
-      : 'bg-red-100 border-red-300 text-red-800';
+  const handleReplay = () => {
+    startRound();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const getCaseRevealColor = (value: number, isFinalChosen: boolean) => {
-    if (isFinalChosen) return 'bg-blue-200 border-blue-400 text-blue-900';
-    return isGoodPrize(value)
-      ? 'bg-green-200 border-green-400 text-green-900'
-      : 'bg-red-200 border-red-400 text-red-900';
-  };
-
-  if (loading || !event) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2] flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#E56353] mx-auto mb-4"></div>
-          <p className="text-xl font-semibold text-gray-700">Loading game...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const handleBackClick = () => {
-    if (phase === 'game-over') {
-      navigate('/dashboard');
+  const handleBack = () => {
+    if (phase === 'pick-case' || phase === 'game-over') {
+      navigate('/');
       return;
     }
 
-    const confirmed = window.confirm(
-      'Are you sure you want to leave? Your current game progress will be lost.'
-    );
-    if (confirmed) {
-      navigate('/dashboard');
-    }
+    if (window.confirm('Leave this game? Your current progress will be lost.')) navigate('/');
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FDF1EF] to-[#F7D6D2] p-3 sm:p-4 py-6 sm:py-8">
-      <div className="max-w-7xl mx-auto">
-        <button
-          onClick={handleBackClick}
-          className="mb-4 sm:mb-6 flex items-center gap-2 text-gray-700 hover:text-gray-900 transition font-medium"
-        >
-          <ArrowLeft size={20} />
-          <span>Back to Dashboard</span>
-        </button>
+  if (phase === 'game-over' && finalPrize && finalCaseNumber !== null && otherPrize && finalDecision) {
+    return (
+      <main className="game-shell winner-page text-white">
+        <div className="arcade-shape arcade-shape-left" aria-hidden="true" />
+        <div className="arcade-shape arcade-shape-right" aria-hidden="true" />
+        <div className="winner-page__topbar">
+            <button onClick={() => navigate('/')} className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 font-bold text-[#C6CBE5] hover:border-white/20 hover:bg-white/10 hover:text-white">
+              <ArrowLeft size={20} /> <span className="hidden sm:inline">Games</span>
+            </button>
+            <div className="rounded-full border-2 border-white/20 bg-[#0E0B28] px-4 py-2 text-sm font-semibold text-[#BFC5E3] shadow-[3px_3px_0_#02010B]">
+              Playing as <span className="text-[#48EDA0]">{displayName}</span>
+            </div>
+        </div>
 
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl p-4 sm:p-6 lg:p-8">
-          <div className="text-center mb-6 sm:mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">{event.event_name}</h2>
-            <p className="text-base sm:text-lg text-gray-600 px-2">{message}</p>
-            {playerCaseNumber !== null && phase !== 'pick-case' && (
-              <p className="mt-2 text-xs sm:text-sm text-gray-500">
-                Your chosen case: <span className="font-semibold">Case {playerCaseNumber}</span>
-              </p>
-            )}
+        <WinnerScreen
+          displayName={displayName}
+          finalPrize={finalPrize}
+          finalCaseNumber={finalCaseNumber}
+          otherPrize={otherPrize}
+          decision={finalDecision}
+          onReplay={handleReplay}
+          onChooseGame={() => navigate('/')}
+        />
+      </main>
+    );
+  }
+
+  return (
+    <main className="game-shell min-h-screen px-3 py-5 text-white sm:px-5 sm:py-8">
+      <div className="arcade-shape arcade-shape-left" aria-hidden="true" />
+      <div className="arcade-shape arcade-shape-right" aria-hidden="true" />
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button onClick={handleBack} className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 font-bold text-[#C6CBE5] hover:border-white/20 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#48EDA0]">
+            <ArrowLeft size={20} /> <span className="hidden sm:inline">Back</span>
+          </button>
+          <div className="rounded-full border-2 border-white/20 bg-[#0E0B28] px-4 py-2 text-sm font-semibold text-[#BFC5E3] shadow-[3px_3px_0_#02010B]">
+            Playing as <span className="text-[#48EDA0]">{displayName}</span>
           </div>
+        </div>
+
+        <section className="game-panel rounded-2xl p-4 sm:p-6 lg:p-8">
+          <header className="mb-6 text-center sm:mb-8">
+            <div className="mb-3 flex items-center justify-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-[#48EDA0]">
+              <Sparkles size={15} /> {theme.kicker}
+            </div>
+            <h1 className="arcade-title text-2xl font-black sm:text-4xl">{game.title}</h1>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-[#9DA5CB] sm:text-base">{game.description}</p>
+            <p className="mx-auto mt-5 max-w-2xl rounded-xl border-2 border-white/15 bg-[#08051D] px-4 py-3 text-sm font-bold text-white sm:text-base">{message}</p>
+            {playerCaseNumber !== null && phase !== 'pick-case' && (
+              <p className="mt-3 text-sm text-[#48EDA0]">Your case: <strong>#{playerCaseNumber}</strong></p>
+            )}
+          </header>
 
           {phase === 'final-swap' && (
-            <div className="bg-gradient-to-r from-[#FCE8E5] to-[#F7D6D2] border-2 border-[#E56353] rounded-xl p-4 sm:p-6 mb-6 sm:mb-8 text-center">
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-3 sm:mb-4">Final Decision</h3>
-              <p className="text-sm sm:text-lg text-gray-700 mb-4 sm:mb-6 px-2">
-                Keep your chosen case, or switch to the last remaining case.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
-                <button
-                  onClick={() => handleSwap(true)}
-                  disabled={!lastRemainingCase}
-                  className="bg-[#E56353] hover:bg-[#D55445] disabled:bg-[#E9A39A] text-white font-bold py-3 px-6 sm:px-8 rounded-lg transition shadow-md hover:shadow-lg text-sm sm:text-base"
-                >
-                  {lastRemainingCase ? `SWITCH TO CASE ${lastRemainingCase.caseNumber}` : 'SWITCH'}
+            <div className="mb-7 rounded-2xl border-[3px] border-[#F8F7EF] bg-[#7B36D8] p-5 text-center shadow-[6px_7px_0_#02010B] sm:p-7">
+              <h2 className="arcade-title text-2xl font-black uppercase">Keep or switch?</h2>
+              <p className="mt-3 font-medium text-white/80">This is your final decision, {displayName}.</p>
+              <div className="mt-5 flex flex-col justify-center gap-3 sm:flex-row">
+                <button onClick={() => handleFinalChoice(false)} className="rounded-xl border-[3px] border-white bg-[#0E0B28] px-6 py-3 font-black text-white shadow-[4px_4px_0_#02010B] hover:-translate-y-1">
+                  Keep Case {playerCaseNumber}
                 </button>
-                <button
-                  onClick={() => handleSwap(false)}
-                  className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 sm:px-8 rounded-lg transition shadow-md hover:shadow-lg text-sm sm:text-base"
-                >
-                  {playerCaseNumber !== null ? `KEEP CASE ${playerCaseNumber}` : 'KEEP MY CASE'}
+                <button onClick={() => handleFinalChoice(true)} className="rounded-xl border-[3px] border-white bg-[#48EDA0] px-6 py-3 font-black text-[#09051B] shadow-[4px_4px_0_#02010B] hover:-translate-y-1 hover:bg-[#D9FF43]">
+                  Switch to Case {lastRemainingCase?.caseNumber}
                 </button>
               </div>
             </div>
           )}
 
-          {phase === 'game-over' && finalPrize && (
-            <div className="relative overflow-hidden bg-gradient-to-r from-green-100 to-emerald-100 border-2 border-green-400 rounded-xl p-6 sm:p-8 mb-6 sm:mb-8 text-center">
-              <CongratsConfetti />
-              <Gift size={48} className="sm:w-16 sm:h-16 mx-auto mb-4 text-green-600 relative" />
-              <h3 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-3 sm:mb-4">Congratulations!</h3>
-              {finalCaseNumber !== null && (
-                <p className="text-lg sm:text-xl font-semibold text-gray-700 mb-2">
-                  Final choice: <span className="font-bold">Case {finalCaseNumber}</span>
-                </p>
-              )}
-              <p className="text-xl sm:text-2xl font-semibold text-gray-700 mb-2">You won:</p>
-              <p className="text-2xl sm:text-4xl font-bold text-green-600 mb-3 sm:mb-4 break-words px-2">{finalPrize.name}</p>
-              {finalPrize.value > 0 && (
-                <p className="text-2xl sm:text-3xl font-semibold text-gray-700">
-                  {formatMMK(finalPrize.value)}
-                </p>
-              )}
-              {otherPrize && (
-                <p className="mt-4 text-xs sm:text-sm text-gray-600">
-                  The other case had: <span className="font-semibold">{otherPrize.name}</span>
-                </p>
-              )}
-            </div>
-          )}
+          <div className="case-board mb-8">
+            <div className="case-grid grid grid-cols-4 gap-2 sm:grid-cols-5 sm:gap-3">
+              {cases.map((caseItem) => {
+                const revealed = caseItem.opened || revealingCase === caseItem.caseNumber;
+                const selected = caseItem.caseNumber === playerCaseNumber && !caseItem.opened;
+                const prizeVisual = getPrizeVisual(caseItem.prize);
+                const pattern = revealed ? prizeVisual.pattern : CASE_PATTERNS[(caseItem.caseNumber - 1) % CASE_PATTERNS.length];
 
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2 sm:gap-3 mb-6 sm:mb-8">
-            {cases.map((caseItem) => (
-              <button
-                key={caseItem.caseNumber}
-                onClick={() => {
-                  if (phase === 'pick-case') {
-                    handlePickCase(caseItem);
-                  } else if (
-                    phase === 'elimination' &&
-                    !caseItem.opened &&
-                    caseItem.caseNumber !== playerCaseNumber
-                  ) {
-                    handleOpenCase(caseItem);
-                  }
-                }}
-                disabled={
-                  caseItem.opened ||
-                  phase === 'final-swap' ||
-                  phase === 'game-over' ||
-                  (phase === 'elimination' && caseItem.caseNumber === playerCaseNumber) ||
-                  revealingCase !== null
-                }
-                className={`
-                  aspect-square rounded-lg font-bold text-sm sm:text-base lg:text-lg transition-all transform hover:scale-105
-                  ${
-                    caseItem.caseNumber === playerCaseNumber && !caseItem.opened
-                      ? 'bg-[#E56353] text-white ring-2 sm:ring-4 ring-[#F2B7B0]'
-                      : ''
-                  }
-                  ${
-                    caseItem.opened || revealingCase === caseItem.caseNumber
-                      ? `${getCaseRevealColor(caseItem.prize.value, phase === 'game-over' && finalCaseNumber === caseItem.caseNumber)} cursor-not-allowed`
-                      : 'bg-white border-2 border-gray-300 hover:border-[#E56353] text-gray-800'
-                  }
-                  ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}
-                  ${phase === 'game-over' ? 'cursor-default' : ''}
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                `}
-              >
-                {caseItem.opened || revealingCase === caseItem.caseNumber ? (
-                  <div className="text-[0.6rem] sm:text-xs px-1 break-words leading-tight">
-                    {caseItem.prize.name}
-                  </div>
-                ) : (
-                  caseItem.caseNumber
-                )}
-              </button>
-            ))}
+                return (
+                  <button
+                    key={caseItem.caseNumber}
+                    onClick={() => phase === 'pick-case' ? handlePickCase(caseItem) : void handleOpenCase(caseItem)}
+                    disabled={
+                      caseItem.opened ||
+                      phase === 'final-swap' ||
+                      phase === 'game-over' ||
+                      (phase === 'elimination' && selected) ||
+                      revealingCase !== null
+                    }
+                    aria-label={revealed ? `Case ${caseItem.caseNumber}: ${caseItem.prize.label}` : `Case ${caseItem.caseNumber}`}
+                    style={{ backgroundColor: revealed ? prizeVisual.background : selected ? '#0E0B28' : CASE_COLORS[(caseItem.caseNumber - 1) % CASE_COLORS.length] }}
+                    className={`game-case prize-pattern-${pattern} aspect-square rounded-xl p-1 text-sm font-black text-[#09051B] transition-transform enabled:hover:-translate-y-1 sm:text-base lg:aspect-[3/2] ${
+                      selected
+                        ? 'game-case--yours text-[#D9FF43]'
+                        : 'enabled:hover:ring-2 enabled:hover:ring-white/80'
+                    } ${revealingCase === caseItem.caseNumber ? 'animate-pulse' : ''}`}
+                  >
+                    {revealed ? (
+                      <span className="relative z-10 flex h-full flex-col items-center justify-center gap-1">
+                        <PrizeIcon prize={caseItem.prize} className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
+                        <span className="line-clamp-2 text-[0.5rem] leading-tight sm:text-[0.62rem]">{caseItem.prize.label}</span>
+                      </span>
+                    ) : selected ? (
+                      <span className="relative z-10 flex flex-col uppercase leading-none">
+                        <span className="text-[0.62rem] tracking-[0.12em]">Yours</span>
+                        <span className="mt-1 text-base">#{caseItem.caseNumber}</span>
+                      </span>
+                    ) : <span className="relative z-10">{caseItem.caseNumber}</span>}
+                  </button>
+                );
+              })}
+            </div>
+
+            <ChosenCaseCard
+              caseNumber={playerCaseNumber}
+              accent={theme.accent}
+              openedCase={lastOpenedCase}
+            />
           </div>
 
-          <div className="border-t pt-4 sm:pt-6">
-            <h4 className="text-lg sm:text-xl font-bold text-gray-800 mb-3 sm:mb-4 flex items-center gap-2">
-              <DollarSign size={20} className="sm:w-6 sm:h-6" />
-              {phase === 'game-over' ? 'All Prizes' : 'Remaining Prizes'}
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-3">
-              {cases
-                .filter((c) => (phase === 'game-over' ? true : !c.opened))
-                .slice()
-                .sort((a, b) => a.caseNumber - b.caseNumber)
-                .map((c) => {
-                  const isFinalPrize = phase === 'game-over' && finalCaseNumber === c.caseNumber;
-                  return (
-                    <div
-                      key={c.caseNumber}
-                      className={`p-2 sm:p-3 rounded-lg border-2 ${
-                        isFinalPrize
-                          ? 'bg-blue-100 border-blue-400 text-blue-900'
-                          : getPrizeColor(c.prize.value)
-                      }`}
-                    >
-                      <p className="font-semibold truncate text-xs sm:text-sm">
-                        {phase === 'game-over' ? `Case ${c.caseNumber}: ` : ''}
-                        {c.prize.name}
-                      </p>
-                      <p className="text-xs sm:text-sm">
-                        {c.prize.value > 0 ? formatMMK(c.prize.value) : 'Joke/Blank'}
-                      </p>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
+          <PrizeDeck
+            cases={cases}
+            title="Prize deck"
+            subtitle="Crossed-out prizes are gone. Unmarked prizes are still in play."
+          />
+        </section>
       </div>
-    </div>
+    </main>
   );
 }
-
